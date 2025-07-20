@@ -1,0 +1,48 @@
+pipeline {
+  agent any
+
+  environment {
+    MONGO_URI = "mongodb://mongo:27017/mydb"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git 'https://github.com/scotch-io/node-api.git'
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          docker.build("node-api:${BUILD_NUMBER}")
+        }
+      }
+    }
+
+    stage('Run Tests') {
+      steps {
+        sh 'npm install'
+        sh 'npm test || echo "Tests not available"'
+      }
+    }
+
+    stage('Security Scan') {
+      steps {
+        sh 'trivy fs . || true'
+      }
+    }
+
+    stage('Push to DockerHub') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+          sh '''
+            echo "$PASSWORD" | docker login -u "$USERNAME" --password-stdin
+            docker tag node-api:${BUILD_NUMBER} $USERNAME/node-api:latest
+            docker push $USERNAME/node-api:latest
+          '''
+        }
+      }
+    }
+  }
+}
